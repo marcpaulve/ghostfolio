@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset --force",
     "format": "nx format:write",
     "lint": "nx run-many --target=lint --all",
     "start": "nx serve api",

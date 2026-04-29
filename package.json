@@ -21,6 +21,7 @@
     "test": "nx run-many --target=test --all",
     "test:api": "nx test api",
     "test:client": "nx test client",
+    "test:watch": "nx run-many --target=test --all --watch",
     "prepare": "husky install"
   },
   "private": true,

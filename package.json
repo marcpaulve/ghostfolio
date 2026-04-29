@@ -17,6 +17,7 @@
     "start": "nx serve api",
     "start:dev": "nx serve api --configuration=development",
     "start:client": "nx serve client",
+    "start:all": "nx run-many --target=serve --all --parallel",
     "test": "nx run-many --target=test --all",
     "test:api": "nx test api",
     "test:client": "nx test client",

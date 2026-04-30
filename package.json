@@ -12,6 +12,7 @@
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
+    "db:backup": "pg_dump $DATABASE_URL > backup_$(date +%Y%m%d_%H%M%S).sql",
     "format": "nx format:write",
     "lint": "nx run-many --target=lint --all",
     "start": "nx serve api",

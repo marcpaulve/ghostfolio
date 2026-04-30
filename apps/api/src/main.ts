@@ -1,129 +1,88 @@
-import {
-  BULL_BOARD_ROUTE,
-  DEFAULT_HOST,
-  DEFAULT_PORT,
-  STORYBOOK_PATH,
-  SUPPORTED_LANGUAGE_CODES
-} from '@ghostfolio/common/config';
-
-import {
-  Logger,
-  LogLevel,
-  ValidationPipe,
-  VersioningType
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import type { NestExpressApplication } from '@nestjs/platform-express';
-import cookieParser from 'cookie-parser';
-import { NextFunction, Request, Response } from 'express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AppModule } from './app/app.module';
+import * as compression from 'compression';
 import helmet from 'helmet';
 
-import { AppModule } from './app/app.module';
-import { environment } from './environments/environment';
-
 async function bootstrap() {
-  const configApp = await NestFactory.create(AppModule);
-  const configService = configApp.get<ConfigService>(ConfigService);
-  let customLogLevels: LogLevel[];
-
-  try {
-    customLogLevels = JSON.parse(
-      configService.get<string>('LOG_LEVELS')
-    ) as LogLevel[];
-  } catch {}
-
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    logger:
-      customLogLevels ??
-      (environment.production
-        ? ['error', 'log', 'warn']
-        : ['debug', 'error', 'log', 'verbose', 'warn'])
+  const app = await NestFactory.create(AppModule, {
+    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
 
-  app.enableCors();
-  app.enableVersioning({
-    defaultVersion: '1',
-    type: VersioningType.URI
-  });
-  app.setGlobalPrefix('api', {
-    exclude: [
-      `${BULL_BOARD_ROUTE.substring(1)}{/*wildcard}`,
-      'sitemap.xml',
-      ...SUPPORTED_LANGUAGE_CODES.map((languageCode) => {
-        // Exclude language-specific routes with an optional wildcard
-        return `/${languageCode}{/*wildcard}`;
-      })
-    ]
+  const globalPrefix = 'api';
+  app.setGlobalPrefix(globalPrefix);
+
+  // Security middleware
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+      },
+    },
+  }));
+
+  // Compression middleware
+  app.use(compression());
+
+  // Enable CORS for development and configured origins
+  app.enableCors({
+    origin: process.env.ROOT_URL ?? 'http://localhost:4200',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
   });
 
+  // Global validation pipe with transformation
   app.useGlobalPipes(
     new ValidationPipe({
-      forbidNonWhitelisted: true,
       transform: true,
-      whitelist: true
+      whitelist: true,
+      forbidNonWhitelisted: false,
     })
   );
 
-  // Support 10mb csv/json files for importing activities
-  app.useBodyParser('json', { limit: '10mb' });
+  // Swagger/OpenAPI documentation setup
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Ghostfolio API')
+      .setDescription('The Ghostfolio API for managing personal finance portfolios')
+      .setVersion('1.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'Authorization',
+          description: 'Enter JWT token',
+          in: 'header',
+        },
+        'access-token'
+      )
+      .build();
 
-  app.use(cookieParser());
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
 
-  if (configService.get<string>('ENABLE_FEATURE_SUBSCRIPTION') === 'true') {
-    app.use((req: Request, res: Response, next: NextFunction) => {
-      if (req.path.startsWith(STORYBOOK_PATH)) {
-        next();
-      } else {
-        helmet({
-          contentSecurityPolicy: {
-            directives: {
-              connectSrc: ["'self'", 'https://js.stripe.com'], // Allow connections to Stripe
-              frameSrc: ["'self'", 'https://js.stripe.com'], // Allow loading frames from Stripe
-              scriptSrc: ["'self'", "'unsafe-inline'", 'https://js.stripe.com'], // Allow inline scripts and scripts from Stripe
-              scriptSrcAttr: ["'self'", "'unsafe-inline'"], // Allow inline event handlers
-              styleSrc: ["'self'", "'unsafe-inline'"] // Allow inline styles
-            }
-          },
-          crossOriginOpenerPolicy: false // Disable Cross-Origin-Opener-Policy header (for Internet Identity)
-        })(req, res, next);
-      }
-    });
+    Logger.log(
+      `Swagger documentation available at: http://localhost:${process.env.PORT ?? 3333}/api/docs`,
+      'Bootstrap'
+    );
   }
 
-  const HOST = configService.get<string>('HOST') || DEFAULT_HOST;
-  const PORT = configService.get<number>('PORT') || DEFAULT_PORT;
+  const port = process.env.PORT ?? 3333;
 
-  await app.listen(PORT, HOST, () => {
-    logLogo();
+  await app.listen(port);
 
-    let address = app.getHttpServer().address();
-
-    if (typeof address === 'object') {
-      const addressObject = address;
-      let host = addressObject.address;
-
-      if (addressObject.family === 'IPv6') {
-        host = `[${addressObject.address}]`;
-      }
-
-      address = `${host}:${addressObject.port}`;
-    }
-
-    Logger.log(`Listening at http://${address}`);
-    Logger.log('');
-  });
-}
-
-function logLogo() {
-  Logger.log('   ________               __  ____      ___');
-  Logger.log('  / ____/ /_  ____  _____/ /_/ __/___  / (_)___');
-  Logger.log(' / / __/ __ \\/ __ \\/ ___/ __/ /_/ __ \\/ / / __ \\');
-  Logger.log('/ /_/ / / / / /_/ (__  ) /_/ __/ /_/ / / / /_/ /');
   Logger.log(
-    `\\____/_/ /_/\\____/____/\\__/_/  \\____/_/_/\\____/ ${environment.version}`
+    `🚀 Application is running on: http://localhost:${port}/${globalPrefix}`,
+    'Bootstrap'
   );
-  Logger.log('');
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  Logger.error('Failed to start application', error, 'Bootstrap');
+  process.exit(1);
+});
